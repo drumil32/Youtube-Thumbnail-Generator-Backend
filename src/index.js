@@ -198,7 +198,7 @@ const validateImageRequest = (req, res, next) => {
     next();
 };
 
-app.get('/health', (req, res) => {
+app.get('/yb/health', (req, res) => {
     console.log('🩺 Health check requested');
     res.status(200).json({
         status: 'OK',
@@ -261,7 +261,7 @@ When users provide reference images, analyze what works and enhance by:
 - Ensuring YouTube optimization
 `;
 
-app.post('/api/generate', uploadFields, validateImageRequest, async (req, res) => {
+app.post('/yb/api/generate', uploadFields, validateImageRequest, async (req, res) => {
     console.log('🚀 Starting image generation request...');
 
     const {
