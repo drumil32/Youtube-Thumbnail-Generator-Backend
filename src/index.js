@@ -11,6 +11,58 @@ import 'dotenv/config';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Simple rate limiting using in-memory store
+const requestCounts = {};
+const RATE_LIMIT = 15; // requests per IP
+const TIME_WINDOW = 60 * 60 * 1000; // 1 hour in milliseconds
+
+// Rate limiting middleware
+const rateLimiter = (req, res, next) => {
+    const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+    console.log(`🌐 Request from IP: ${clientIP}`);
+    
+    const now = Date.now();
+    
+    // Initialize or get existing record for this IP
+    if (!requestCounts[clientIP]) {
+        requestCounts[clientIP] = {
+            count: 1,
+            firstRequest: now
+        };
+        console.log(`✅ New IP: ${clientIP}, requests: 1/${RATE_LIMIT}`);
+        return next();
+    }
+    
+    const ipData = requestCounts[clientIP];
+    
+    // Check if time window has expired, reset if so
+    if (now - ipData.firstRequest > TIME_WINDOW) {
+        requestCounts[clientIP] = {
+            count: 1,
+            firstRequest: now
+        };
+        console.log(`🔄 Rate limit reset for IP: ${clientIP}, requests: 1/${RATE_LIMIT}`);
+        return next();
+    }
+    
+    // Check if limit exceeded
+    if (ipData.count >= RATE_LIMIT) {
+        const timeLeft = Math.ceil((TIME_WINDOW - (now - ipData.firstRequest)) / 1000 / 60);
+        console.log(`❌ Rate limit exceeded for IP: ${clientIP}, requests: ${ipData.count}/${RATE_LIMIT}`);
+        
+        return res.status(429).json({
+            success: false,
+            message: `Rate limit exceeded. You can make ${RATE_LIMIT} requests per hour. Try again in ${timeLeft} minutes.`
+        });
+    }
+    
+    // Increment counter
+    ipData.count++;
+    console.log(`✅ IP: ${clientIP}, requests: ${ipData.count}/${RATE_LIMIT}`);
+    
+    next();
+};
+
 // Enable CORS for all routes
 app.use(cors({
     origin: process.env.CORS_ORIGIN || '*',
@@ -20,6 +72,9 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// Apply rate limiting globally to all routes
+app.use(rateLimiter);
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
