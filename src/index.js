@@ -58,12 +58,22 @@ const rateLimiter = (req, res, next) => {
 
     // Check if limit exceeded
     if (ipData.count >= RATE_LIMIT) {
-        const timeLeft = Math.ceil((TIME_WINDOW - (now - ipData.firstRequest)) / 1000 / 60);
+        const timeLeftMs = TIME_WINDOW - (now - ipData.firstRequest);
+        const timeLeftMinutes = Math.ceil(timeLeftMs / 1000 / 60);
+        const timeLeftHours = Math.ceil(timeLeftMs / 1000 / 60 / 60);
+        
+        let timeMessage;
+        if (timeLeftHours >= 1) {
+            timeMessage = `${timeLeftHours} hour${timeLeftHours > 1 ? 's' : ''}`;
+        } else {
+            timeMessage = `${timeLeftMinutes} minute${timeLeftMinutes > 1 ? 's' : ''}`;
+        }
+        
         console.log(`❌ Rate limit exceeded for IP: ${clientIP}, requests: ${ipData.count}/${RATE_LIMIT}`);
 
         return res.status(429).json({
             success: false,
-            message: `Rate limit exceeded. You can make ${RATE_LIMIT} requests per hour. Try again in ${timeLeft} minutes.`
+            message: `Rate limit exceeded. You can make ${RATE_LIMIT} requests per day. Try again in ${timeMessage}.`
         });
     }
 
