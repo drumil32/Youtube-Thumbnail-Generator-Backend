@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import OpenAI from 'openai';
 import fs from 'fs';
+import cors from 'cors';
 // import sharp from 'sharp';
 import AWS from 'aws-sdk';
 import 'dotenv/config';
@@ -9,6 +10,14 @@ import 'dotenv/config';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Enable CORS for all routes
+app.use(cors({
+    origin: process.env.CORS_ORIGIN || '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
 
 app.use(express.json());
 
