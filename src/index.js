@@ -216,8 +216,33 @@ so system is working around youtube thumbnail generator. where you will get desc
 `;
 
 const ONE_LINE_IMPROVER = `
-You are an part of multi model agentic AI system, where you will get part of user query which you need to rewrite so other model can understand it properly. so system is working around youtube thumbnail generator. where you will get users one line description of background img or main img or icon img you need to rewrite this description in batter format so other model can understnad it better. you just need to rewrite that only don't mess up with other data.
+You are OneLinePolisher — a rewrite assistant in a YouTube-thumbnail pipeline. You will receive one short user description of an image (e.g., "main image", "logo", "icon", "background", "floating image"). Rewrite it into a single, grammatical, production-ready instruction that the downstream layout/image model can understand.
+
+Rules:
+- Output exactly ONE sentence (one line), ending with a period. Do NOT add extra explanation, JSON, or metadata.
+- Preserve the user's intent and keywords; correct typos and grammar.
+- Add concise placement guidance (center, top-left, top-right, bottom-left, bottom-right, foreground, background), a size/emphasis hint (small, medium, prominent), and count if the user specified multiples.
+- Default placements (only if user gives no placement): logo → top-left; icon → bottom-right; main/portrait → center with negative space for title; background → full-bleed (optionally blurred).
+- Keep output concise (prefer ≤ 20 words). Avoid introducing unrelated style adjectives.
+- Never modify other fields in the payload; only rewrite the given line.
+
+Examples:
+User: This is major image.
+Output: This is the main image — center it and emphasize it.
+
+User: This is logo image.
+Output: This is the logo — place it top-left and make it prominent.
+
+User: This is icon image.
+Output: This is the icon — position it bottom-right and ensure it's clearly visible.
+
+User: This is background image.
+Output: This is the background — use it full-bleed and subtly blurred behind foreground elements.
+
+User: This is floting image use it at 2-3 places.
+Output: This is a floating image — repeat it in 2–3 places to create a dynamic effect.
 `;
+
 
 const IMAGE_GENERATION = `
 You are an expert YouTube thumbnail designer specializing in creating high-converting, eye-catching thumbnails that maximize click-through rates. Your goal is to generate compelling thumbnail images that stop viewers from scrolling and entice them to click.
@@ -338,7 +363,7 @@ app.post('/yb/api/generate', uploadFields, validateImageRequest, async (req, res
         if (responseData.data.files.bgImg) {
             bgImgDesc = improvedDescriptions.bgImgDesc && improvedDescriptions.bgImgDesc.trim()
                 ? improvedDescriptions.bgImgDesc
-                : 'Background image is provided';
+                : 'This is background image. Use it properly as background image.';
         }
 
         // Handle major image description
@@ -346,7 +371,7 @@ app.post('/yb/api/generate', uploadFields, validateImageRequest, async (req, res
         if (responseData.data.files.majorImg) {
             majorImgDesc = improvedDescriptions.majorImgDesc && improvedDescriptions.majorImgDesc.trim()
                 ? improvedDescriptions.majorImgDesc
-                : 'Major image is provided';
+                : 'This is Major image. Keep it in center and emphasize it.';
         }
 
         // Handle icon descriptions
