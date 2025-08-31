@@ -9,6 +9,7 @@ pnpm-debug.log*
 *.png
 .env
 .env.local
+.claude
 .env.development.local
 .env.test.local
 .env.production.local
