@@ -14,15 +14,26 @@ const PORT = process.env.PORT || 3000;
 // Simple rate limiting using in-memory store
 const requestCounts = {};
 const RATE_LIMIT = 15; // requests per IP
-const TIME_WINDOW = 60 * 60 * 1000; // 1 hour in milliseconds
+const TIME_WINDOW = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+export const getClientIp = (req) => {
+    // Check various headers for the real client IP
+    console.log(`x-real-ip ${req.get('X-Real-IP')}`);
+    console.log(`x-forwarded-for ${req.get('X-Forwarded-For')}`);
+    return req.get('X-Real-IP') ||
+        req.get('X-Forwarded-For')?.split(',')[0]?.trim() ||
+        req.ip ||
+        req.socket.remoteAddress ||
+        'unknown';
+};
 
 // Rate limiting middleware
 const rateLimiter = (req, res, next) => {
-    const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
+    const clientIP = getClientIp(req);
     console.log(`🌐 Request from IP: ${clientIP}`);
-    
+
     const now = Date.now();
-    
+
     // Initialize or get existing record for this IP
     if (!requestCounts[clientIP]) {
         requestCounts[clientIP] = {
@@ -32,9 +43,9 @@ const rateLimiter = (req, res, next) => {
         console.log(`✅ New IP: ${clientIP}, requests: 1/${RATE_LIMIT}`);
         return next();
     }
-    
+
     const ipData = requestCounts[clientIP];
-    
+
     // Check if time window has expired, reset if so
     if (now - ipData.firstRequest > TIME_WINDOW) {
         requestCounts[clientIP] = {
@@ -44,22 +55,22 @@ const rateLimiter = (req, res, next) => {
         console.log(`🔄 Rate limit reset for IP: ${clientIP}, requests: 1/${RATE_LIMIT}`);
         return next();
     }
-    
+
     // Check if limit exceeded
     if (ipData.count >= RATE_LIMIT) {
         const timeLeft = Math.ceil((TIME_WINDOW - (now - ipData.firstRequest)) / 1000 / 60);
         console.log(`❌ Rate limit exceeded for IP: ${clientIP}, requests: ${ipData.count}/${RATE_LIMIT}`);
-        
+
         return res.status(429).json({
             success: false,
             message: `Rate limit exceeded. You can make ${RATE_LIMIT} requests per hour. Try again in ${timeLeft} minutes.`
         });
     }
-    
+
     // Increment counter
     ipData.count++;
     console.log(`✅ IP: ${clientIP}, requests: ${ipData.count}/${RATE_LIMIT}`);
-    
+
     next();
 };
 
@@ -732,25 +743,25 @@ app.post('/yb/api/generate', uploadFields, validateImageRequest, async (req, res
 
             if (uploadResult.success) {
                 console.log(`☁️ Image uploaded to S3: ${uploadResult.url}`);
-                
+
                 // Success response - flat structure
                 const apiResponse = {
                     success: true,
                     message: 'Image generated and uploaded successfully',
                     url: uploadResult.url
                 };
-                
+
                 console.log('📤 Sending success response');
                 return res.status(200).json(apiResponse);
             } else {
                 console.log(`❌ S3 upload failed: ${uploadResult.error}`);
-                
+
                 // Upload failed response
                 const apiResponse = {
                     success: false,
                     message: `Image generated but upload failed: ${uploadResult.error}`
                 };
-                
+
                 console.log('📤 Sending upload failure response');
                 return res.status(500).json(apiResponse);
             }
@@ -764,7 +775,7 @@ app.post('/yb/api/generate', uploadFields, validateImageRequest, async (req, res
                 success: false,
                 message: 'Image generation failed - no image returned by AI'
             };
-            
+
             console.log('📤 Sending no image response');
             return res.status(400).json(apiResponse);
         }
