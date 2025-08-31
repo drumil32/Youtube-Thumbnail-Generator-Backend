@@ -211,8 +211,11 @@ const openai = new OpenAI();
 
 // AI System Prompts
 const QUERY_REWRITER_SYSTEM_PROMPT = `
-You are an part of multi model agentic AI system, where you will get user query and you need to optmize it further so that other model can work on your query to give batter output.
-so system is working around youtube thumbnail generator. where you will get description from user in which user will mention about what they want and how thumbnail should looks like. user also has uploaded their own data like main img prominent one in thumbnail, bg img, logs as per need. now you will not get access to this imgs but you will get one line desription for each one of this and another description whihc user provide in which they mention about how thumbnail looks like. you will also get users category ( same as youtube category ex: educational, health, etc... ) you will also get their color theme. by using these data you need to rewrite user query in detailed manner so that other model can use your query and generate img. one thing which will constant regardless of users input which is img ration it should be always 16:9 this is fixed and you need to always add this in your final output.
+You are part of a multi-model agentic AI system that optimizes user queries for better output from other models. The system focuses on generating YouTube thumbnails. Users provide a description stating their requirements for the thumbnail and how it should look. They also upload their own data, including a main image to be featured prominently in the thumbnail, a background image, and logos as needed. 
+
+While you won't have access to these images, you will receive one-line descriptions for each image from the user, along with another description detailing the desired appearance of the thumbnail. You will also be given the user's category (similar to YouTube categories, e.g., educational, health, etc.) and their preferred color theme. 
+
+Using this information, you need to rewrite the user query in a detailed manner so that other models can generate the thumbnail image. One constant aspect of the output, regardless of user input, is that the image ratio should always be 16:9. Make sure to include this in your final output.
 `;
 
 const ONE_LINE_IMPROVER = `
@@ -242,7 +245,6 @@ Output: This is the background — use it full-bleed and subtly blurred behind f
 User: This is floting image use it at 2-3 places.
 Output: This is a floating image — repeat it in 2–3 places to create a dynamic effect.
 `;
-
 
 const IMAGE_GENERATION = `
 You are an expert YouTube thumbnail designer AI whose sole job is to create high-converting, eye-catching thumbnails that maximize click-through rates.
@@ -277,6 +279,19 @@ BACKGROUND & CLOTHING THEME HARMONIZATION (explicit)
   - Change background color/grade to improve contrast with headline text and subject (use teal/orange, purple/yellow, or high-contrast combos depending on mood).
 - Ensure clothing and background never blend with headline text color; if risk exists, add text box or outline.
 
+POSTURE ADJUSTMENT (explicit)
+- If the user requests a posture change or if the layout benefits from a new pose, the generator should propose and (where feasible) apply posture adjustments that improve readability and emotional impact.
+- Allowed posture edits:
+  - Small/medium adjustments: tilt of head, shoulder angle, three-quarter turn, lean forward/back, hand placement (e.g., arms crossed, pointing, holding prop).
+  - Full pose recompose: only if sufficient image data exists or a realistic composite can be produced without obscuring the face or breaking anatomy.
+- Pose suggestions to offer (choose 1–2 per variation): confident/front-facing (arms visible, chest forward), leaning-in (engaging), three-quarter turn (dynamic), hands-on-hip (confident), pointing-to-prop (instructional), surprised/shocked (wide eyes, open mouth).
+- Implementation rules:
+  - Always preserve facial identity and skin tones; avoid changing facial structure or identity-defining features.
+  - Maintain natural anatomy and lighting — posture edits must include matching shadow/lighting adjustments.
+  - Do NOT create sexualized or offensive poses. Avoid any posture that could be interpreted as harmful or misleading.
+  - If pose change would be unrealistic with the provided asset, instead suggest camera/angle/crop alternatives (e.g., "crop tighter to simulate engagement", "tilt camera 10°", or "add a second composite arm from a matching source").
+- If posture was changed (or suggested), include a short justification and a confidence note (e.g., "Applied posture: lean-in; confidence: high — source resolution > 1500px").
+
 NEGATIVE CONSTRAINTS (always apply)
 - No watermarks, logos, or visible UI artifacts.
 - No low-resolution or heavily compressed output.
@@ -292,6 +307,9 @@ OUTPUT / METADATA (required alongside image)
 - Provide a one-line layout hint for overlay placement (e.g., "Left negative space for title; top-right logo; text contrast: white w/ dark drop shadow").
 - Provide the chosen 2–3 color palette names or hexes.
 - Provide any clothing recolor suggestion if applied (e.g., "Change shirt to deep blue to match palette").
+- Provide postureSuggestion metadata when posture is proposed or applied:
+  - postureSuggestion: { applied: true|false, poseName: "<pose>", justification: "<why>", confidence: "<high|medium|low>" }
+- If posture not applied due to asset limits, provide recommended alternatives (camera crop/angle/composite).
 
 TECH SPECS
 - Resolution: final exactly 1280x720 px.
@@ -299,12 +317,11 @@ TECH SPECS
 - Keep editable layers / masks where possible (subject cutout, text plate, vignette).
 
 EXAMPLE GUIDANCE TRANSFORMATIONS
-- Input: "portrait with laptop" → Output instruction: "Center portrait, 3/4 crop, laptop slightly visible; left negative space for large title; background blurred modern office; recolor shirt to deep teal to match palette."
+- Input: "portrait with laptop" → Output instruction: "Center portrait, 3/4 crop, laptop slightly visible; left negative space for large title; background blurred modern office; recolor shirt to deep teal to match palette. postureSuggestion: { applied: true, poseName: 'lean-in', justification: 'more engaging for CTA', confidence: 'high' }"
 - Input: "logo icon" → Output instruction: "Place logo top-left, 10% padding from edges, keep prominent; increase contrast vs background."
 
 Performance note: prioritize legibility at small sizes over ornamental details. Always confirm final canvas is exactly 16:9 before exporting.
 `;
-
 
 app.post('/yb/api/generate', uploadFields, validateImageRequest, async (req, res) => {
     console.log('🚀 Starting image generation request...');
