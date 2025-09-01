@@ -61,14 +61,14 @@ const rateLimiter = (req, res, next) => {
         const timeLeftMs = TIME_WINDOW - (now - ipData.firstRequest);
         const timeLeftMinutes = Math.ceil(timeLeftMs / 1000 / 60);
         const timeLeftHours = Math.ceil(timeLeftMs / 1000 / 60 / 60);
-        
+
         let timeMessage;
         if (timeLeftHours >= 1) {
             timeMessage = `${timeLeftHours} hour${timeLeftHours > 1 ? 's' : ''}`;
         } else {
             timeMessage = `${timeLeftMinutes} minute${timeLeftMinutes > 1 ? 's' : ''}`;
         }
-        
+
         console.log(`❌ Rate limit exceeded for IP: ${clientIP}, requests: ${ipData.count}/${RATE_LIMIT}`);
 
         return res.status(429).json({
@@ -113,7 +113,7 @@ const upload = multer({
     storage,
     fileFilter,
     limits: {
-        fileSize: 5 * 1024 * 1024, // 3MB limit
+        fileSize: 4 * 1024 * 1024, // 4MB limit
     },
 });
 
@@ -122,6 +122,9 @@ const uploadFields = upload.fields([
     { name: 'majorImg', maxCount: 1 },
     { name: 'imgIcons', maxCount: 5 }
 ]);
+
+// Create a separate upload for follow-up endpoint with single image field
+const uploadSingle = upload.single('img');
 
 const imgGenerator = new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
@@ -175,6 +178,49 @@ const uploadBase64ToS3 = async (base64Data, fileName, contentType = 'image/png')
             error: `S3 upload failed: ${error.message}`
         };
     }
+};
+
+// Validation middleware for follow-up endpoint
+const validateFollowUpRequest = (req, res, next) => {
+    console.log('🔍 Starting follow-up request validation...');
+
+    const { desc } = req.body;
+    const file = req.file;
+    const errors = [];
+
+    // Check if image is provided
+    if (!file) {
+        console.log('❌ No image file provided');
+        errors.push('Image file is required');
+    } else {
+        console.log(`📎 Image file received: ${file.originalname} (${file.size} bytes)`);
+
+        // Check file size (5MB limit)
+        if (file.size > 5 * 1024 * 1024) {
+            console.log('❌ File size exceeds 5MB limit');
+            errors.push('Image file size must be less than 5MB');
+        }
+    }
+
+    // Check if description is provided
+    if (!desc || typeof desc !== 'string' || desc.trim().length === 0) {
+        console.log('❌ Missing or empty description');
+        errors.push('Description is required and cannot be empty');
+    } else {
+        console.log('✅ Description provided:', desc.substring(0, 50) + (desc.length > 50 ? '...' : ''));
+    }
+
+    if (errors.length > 0) {
+        console.log(`❌ Validation failed with ${errors.length} errors:`, errors);
+        return res.status(400).json({
+            success: false,
+            error: 'Validation failed',
+            details: errors
+        });
+    }
+
+    console.log('✅ Follow-up request validation passed');
+    next();
 };
 
 // Validation middleware for file uploads
@@ -817,6 +863,293 @@ app.post('/yb/api/generate', uploadFields, validateImageRequest, async (req, res
         res.status(statusCode).json(errorResponse);
     }
 });
+// uploadSingle,
+app.post('/yb/follow-up',  validateFollowUpRequest, async (req, res) => {
+    console.log('🚀 Starting follow-up request...');
+
+    const { desc, imageUrl } = req.body;
+
+    const response = await fetch(imageUrl);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64 = buffer.toString('base64');
+    
+    // Get content type for data URL (optional)
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const imageUrlBase64 = `data:${contentType};base64,${base64}`;
+
+    
+
+    try {
+
+        console.log('🤖 Step 1: Calling OpenAI for query rewriting...');
+
+        // First, rewrite the user description with follow-up context
+        const aiResponse = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+                {
+                    role: 'system',
+                    content: FOLLOWUP_SYSTEM_PROMPT
+                },
+                {
+                    role: 'user',
+                    content: desc
+                }
+            ]
+        });
+        const rewrittenQuery = aiResponse.choices[0].message.content;
+        
+        console.log('🎨 Step 2: Preparing image generation request...');
+
+        // Create user content for image generation
+        const userContent = [];
+        
+        userContent.push({
+            "type": "text",
+            "text": rewrittenQuery
+        });
+
+        userContent.push({
+            "type": "image_url",
+            "image_url": {
+                "url": imageUrlBase64,
+                "detail": "high"
+            }
+        });
+
+        const userMsg = {
+            "role": "user",
+            "content": userContent
+        };
+
+        // Create messages array for image generation
+        const messages = [];
+
+        messages.push({
+            role: "system",
+            content: IMAGE_REGENERATION
+        });
+        messages.push(userMsg);
+
+        console.log('🤖 Step 3: Calling image generation API...');
+
+        const completion = await imgGenerator.chat.completions.create({
+            model: "google/gemini-2.5-flash-image-preview:free",
+            messages: messages
+        });
+
+        const assistantMessage = completion.choices[0].message;
+
+        // Check if images are present in the response
+        if (assistantMessage.images && assistantMessage.images.length > 0) {
+            console.log('✅ Image regenerated successfully!');
+            console.log('💬 AI Response:', assistantMessage.content ? assistantMessage.content + '...' : 'No text response');
+            console.log('🖼️ Image data received (first 100 chars):', assistantMessage.images[0].image_url.url.substring(0, 100) + '...');
+
+            // Extract the base64 image data
+            const imageData = assistantMessage.images[0].image_url.url;
+
+            // Remove the data URL prefix (e.g., "data:image/png;base64,")
+            const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+
+            // Generate filename with timestamp
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `follow-up-image-${timestamp}.png`;
+
+            // Upload to S3
+            const uploadResult = await uploadBase64ToS3(base64Data, filename, 'image/png');
+
+            if (uploadResult.success) {
+                console.log(`☁️ Image uploaded to S3: ${uploadResult.url}`);
+
+                // Success response - consistent with main generate endpoint
+                const apiResponse = {
+                    success: true,
+                    message: 'Follow-up image generated and uploaded successfully',
+                    url: uploadResult.url
+                };
+
+                console.log('📤 Sending success response');
+                return res.status(200).json(apiResponse);
+            } else {
+                console.log(`❌ S3 upload failed: ${uploadResult.error}`);
+
+                // Upload failed response
+                const apiResponse = {
+                    success: false,
+                    message: `Follow-up image generated but upload failed: ${uploadResult.error}`
+                };
+
+                console.log('📤 Sending upload failure response');
+                return res.status(500).json(apiResponse);
+            }
+
+        } else {
+            console.log('⚠️ No image generated in AI response');
+            console.log('💬 AI Response:', assistantMessage.content ? assistantMessage.content.substring(0, 100) + '...' : 'No response content');
+
+            // No image generated response
+            const apiResponse = {
+                success: false,
+                message: 'Follow-up image generation failed - no image returned by AI'
+            };
+
+            console.log('📤 Sending no image response');
+            return res.status(400).json(apiResponse);
+        }
+
+    } catch (error) {
+        console.log('❌ Error in follow-up pipeline:', error.message);
+        console.log('🔍 Error details:', error.stack);
+
+        // Determine error type and provide appropriate response
+        let errorMessage = 'Follow-up image generation pipeline failed';
+        let statusCode = 500;
+
+        if (error.message.includes('API')) {
+            errorMessage = 'External API call failed';
+            console.log('🌐 API call error detected');
+        } else if (error.message.includes('parse') || error.message.includes('JSON')) {
+            errorMessage = 'Data parsing error';
+            console.log('📄 JSON parsing error detected');
+        } else if (error.message.includes('file') || error.message.includes('write')) {
+            errorMessage = 'File operation error';
+            console.log('💾 File system error detected');
+        }
+
+        // Create minimal error response
+        const errorResponse = {
+            success: false,
+            message: `${errorMessage}: ${error.message}`
+        };
+
+        res.status(statusCode).json(errorResponse);
+    }
+});
+
+const FOLLOWUP_SYSTEM_PROMPT = `
+You are a specialized query rewriter in a multi-agent YouTube thumbnail generation system. Your role is to transform user follow-up queries into optimized prompts for image generation models.
+
+## Core Responsibilities:
+- Rewrite user follow-up queries into clear, detailed image generation prompts
+- Optimize for YouTube thumbnail creation (16:9 aspect ratio, eye-catching visuals)
+- Handle ambiguous references from follow-up context gracefully
+- Enhance vague requests with thumbnail best practices
+
+## Key Guidelines:
+
+### 1. Context Awareness - CRITICAL:
+- The user has provided a previous image that you CANNOT see, but the image generation model will receive
+- Your role is to enhance/modify the existing image, NOT create something completely new
+- Stay within the user's request boundaries - do not add major new elements or concepts unless explicitly asked
+- Focus on incremental improvements, modifications, or specific changes the user requested
+- Take user requests literally and enhance them conservatively
+- Avoid making assumptions that could drastically change the original image concept
+
+### 2. Technical Specifications:
+- Always specify "16:9 aspect ratio" in your output
+- Include "high resolution, sharp, professional quality"
+- Mention "YouTube thumbnail style" when appropriate
+
+### 2. Follow-up Context Handling:
+- If user references "it", "that", "the previous one" without clear context, make reasonable assumptions based on common thumbnail elements
+- When encountering unclear terms, provide the most likely interpretation for thumbnail generation
+- If context is missing, focus on the user's apparent intent and fill gaps with thumbnail best practices
+
+### 3. Query Enhancement Structure:
+Transform user queries by:
+- **Clarifying visual elements**: Convert abstract requests into concrete visual descriptions
+- **Adding composition details**: Include layout, positioning, and visual hierarchy
+- **Specifying style elements**: Color schemes, typography, lighting, effects
+- **Including thumbnail psychology**: Eye-catching elements, emotional triggers, clickability factors
+
+### 4. Thumbnail Optimization Elements to Include:
+- Bold, contrasting colors
+- Clear focal points
+- Readable text elements (if mentioned)
+- Emotional expressions or reactions
+- Visual hierarchy and composition
+- Bright, vibrant lighting
+- Professional graphic design aesthetic
+
+### 5. Output Format:
+Provide a single, comprehensive prompt that:
+- Starts with the main subject/concept
+- Includes technical specifications (16:9, high quality)
+- Details visual style and composition
+- Ends with thumbnail-specific optimization notes
+
+## Example Transformations:
+
+**User Query:** "Make it more colorful"
+**Your Output:** "Create a vibrant, high-energy YouTube thumbnail in 16:9 aspect ratio with bold, saturated colors including electric blues, bright oranges, and vivid purples. High resolution, professional quality with enhanced color contrast and visual pop that draws viewer attention."
+
+**User Query:** "Add some text effects"
+**Your Output:** "Enhance the existing 16:9 YouTube thumbnail by adding dynamic text effects to any text elements present - apply 3D styling, glowing outlines, drop shadows, and vibrant color gradients. Maintain the current composition and overall design while making the text more visually striking and readable. High resolution, professional quality enhancement."
+
+**User Query:** "Make the background darker"  
+**Your Output:** "Modify the existing 16:9 YouTube thumbnail by darkening the background elements while preserving all foreground subjects and text. Adjust lighting and contrast to maintain visual impact and ensure all existing elements remain clearly visible. High resolution, professional quality with enhanced dramatic effect."
+
+Remember: You're preparing prompts for image generation, so be descriptive, specific, and focused on visual elements that make effective YouTube thumbnails.`;
+
+const IMAGE_REGENERATION =`
+You are an AI image generation specialist within a multi-agent YouTube thumbnail optimization system. Your primary role is to enhance existing YouTube thumbnails based on specific user modifications while preserving the original design integrity.
+
+## Core Principles:
+
+### 1. Preservation-First Approach:
+- MAINTAIN the original thumbnail's core theme, concept, and visual identity
+- PRESERVE existing color schemes, composition, and style unless explicitly requested to change
+- DO NOT transform the thumbnail into something completely different
+- Focus on targeted improvements rather than complete redesigns
+
+### 2. User Request Adherence:
+- Execute ONLY the specific modifications requested by the user
+- Avoid adding unrequested elements, effects, or changes
+- If the user asks to "make it more colorful," enhance existing colors rather than introducing new color schemes
+- Take instructions literally and implement them conservatively
+
+### 3. Technical Requirements:
+- Generate all outputs in 16:9 aspect ratio (1920x1080 or higher resolution)
+- Ensure high-resolution, professional quality results
+- Maintain sharp, crisp image clarity suitable for YouTube platform display
+
+## Enhancement Guidelines:
+
+### Visual Optimization:
+- **Readability**: Ensure all text remains highly legible with proper contrast
+- **Focal Points**: Strengthen existing focal elements without adding new ones
+- **Visual Hierarchy**: Enhance the existing composition flow and element positioning
+- **Professional Polish**: Improve overall visual quality while maintaining the original aesthetic
+
+### Thumbnail Psychology (Apply Conservatively):
+- Enhance eye-catching elements that already exist
+- Improve color vibrancy within the established palette
+- Strengthen emotional impact of existing expressions or elements
+- Ensure modifications support clickability without changing the core appeal
+
+### What NOT to Do:
+- Do not add new subjects, objects, or major design elements unless specifically requested
+- Do not change the overall theme, mood, or concept
+- Do not introduce new color schemes or drastically alter existing ones
+- Do not redesign layout or composition unless explicitly asked
+- Do not over-enhance to the point where the thumbnail loses its original character
+
+## Execution Approach:
+1. **Analyze**: Identify the specific user request and its scope
+2. **Target**: Focus modifications only on the requested aspects
+3. **Enhance**: Improve the specified elements while respecting existing design
+4. **Validate**: Ensure changes align with user intent and maintain thumbnail effectiveness
+5. **Output**: Deliver high-quality 16:9 result that feels like an improved version of the original
+
+Remember: You are refining and enhancing, not recreating. The user chose the original thumbnail for a reason - your job is to make their specific requested improvements while honoring their original vision.
+`;
 
 // Error handling middleware for multer
 app.use((error, req, res, next) => {
