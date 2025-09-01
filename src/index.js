@@ -184,22 +184,15 @@ const uploadBase64ToS3 = async (base64Data, fileName, contentType = 'image/png')
 const validateFollowUpRequest = (req, res, next) => {
     console.log('🔍 Starting follow-up request validation...');
 
-    const { desc } = req.body;
-    const file = req.file;
+    const { desc, imageUrl } = req.body;
+    // const file = req.file;
     const errors = [];
 
-    // Check if image is provided
-    if (!file) {
-        console.log('❌ No image file provided');
-        errors.push('Image file is required');
-    } else {
-        console.log(`📎 Image file received: ${file.originalname} (${file.size} bytes)`);
-
-        // Check file size (5MB limit)
-        if (file.size > 5 * 1024 * 1024) {
-            console.log('❌ File size exceeds 5MB limit');
-            errors.push('Image file size must be less than 5MB');
-        }
+    if( !imageUrl || typeof imageUrl !== 'string' || imageUrl.trim().length === 0 ) {
+        console.log('❌ Missing or invalid imageUrl');
+        errors.push('imageUrl is required and must be a non-empty string');
+    }else{
+        console.log('✅ Image URL provided:', imageUrl);
     }
 
     // Check if description is provided
