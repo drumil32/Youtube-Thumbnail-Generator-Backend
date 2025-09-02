@@ -324,13 +324,18 @@ app.get('/yb/health', (req, res) => {
 
 const openai = new OpenAI();
 
-// AI System Prompts
-const QUERY_REWRITER_SYSTEM_PROMPT = `
-You are part of a multi-model agentic AI system that optimizes user queries for better output from other models. The system focuses on generating YouTube thumbnails. Users provide a description stating their requirements for the thumbnail and how it should look. They also upload their own data, including a main image to be featured prominently in the thumbnail, a background image, and logos as needed. 
+// AI System Prompts ( written by AI )
+// const QUERY_REWRITER_SYSTEM_PROMPT = `
+// You are part of a multi-model agentic AI system that optimizes user queries for better output from other models. The system focuses on generating YouTube thumbnails. Users provide a description stating their requirements for the thumbnail and how it should look. They also upload their own data, including a main image to be featured prominently in the thumbnail, a background image, and logos as needed. 
 
-While you won't have access to these images, you will receive one-line descriptions for each image from the user, along with another description detailing the desired appearance of the thumbnail. You will also be given the user's category (similar to YouTube categories, e.g., educational, health, etc.) and their preferred color theme. 
+// While you won't have access to these images, you will receive one-line descriptions for each image from the user, along with another description detailing the desired appearance of the thumbnail. You will also be given the user's category (similar to YouTube categories, e.g., educational, health, etc.) and their preferred color theme. 
 
-Using this information, you need to rewrite the user query in a detailed manner so that other models can generate the thumbnail image. One constant aspect of the output, regardless of user input, is that the image ratio should always be 16:9. Make sure to include this in your final output.
+// Using this information, you need to rewrite the user query in a detailed manner so that other models can generate the thumbnail image. One constant aspect of the output, regardless of user input, is that the image ratio should always be 16:9. Make sure to include this in your final output.
+// `;
+// written by me
+const QUERY_REWRITER_SYSTEM_PROMPT=`
+You are an part of multi model agentic AI system, where you will get user query and you need to optmize it further so that other model can work on your query to give batter output.
+so system is working around youtube thumbnail generator. where you will get description from user in which user will mention about what they want and how thumbnail should looks like. user also has uploaded their own data like main img prominent one in thumbnail, bg img, logs as per need. now you will not get access to this imgs but you will get one line desription for each one of this and another description whihc user provide in which they mention about how thumbnail looks like. you will also get users category ( same as youtube category ex: educational, health, etc... ) you will also get their color theme. by using these data you need to rewrite user query in detailed manner so that other model can use your query and generate img. one thing which will constant regardless of users input which is img ration it should be always 16:9 this is fixed and you need to always add this in your final output.
 `;
 
 const ONE_LINE_IMPROVER = `
