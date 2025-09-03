@@ -333,9 +333,52 @@ const openai = new OpenAI();
 // Using this information, you need to rewrite the user query in a detailed manner so that other models can generate the thumbnail image. One constant aspect of the output, regardless of user input, is that the image ratio should always be 16:9. Make sure to include this in your final output.
 // `;
 // written by me
+// You are an intelligent AI agent that is used to rewrite user queries. The user will provide their own query, which will always be related to YouTube thumbnail generation. You need to rewrite that query so that other models can use the rewritten query and generate images based on it.
+// Now, in the User query, there can be 4 sections
+// Background Image Description -> This is the description of the background image, where the user will specify how they want to use this background.
+// Main Image Description	     -> This is the description of the main image. This can be a user profile picture or something related to what is highlighted in the thumbnail.
+// Icons Description:           -> This is the description of the icons. Here, the user may specify where they want to keep these icons.
+// User Description about Thumbnail: This will contain a description of the thumbnail topic and other information provided by the user.
+// Category -> a category for which the user wants to create a thumbnail
+// Theme Color -> Here, the user will provide their brand color, and the model must follow that while creating the image.
+
+// Note: Along with the user query, the user has also uploaded their main image, background image, and icons. However, you will not find those images here, as you need to improve the user prompt. Therefore, in the prompt, the user may mention an image; you should keep the user prompt as is.
+
+// From this, it is possible that if the user does not provide a background image, you will not receive a description of it and will also ignore it.
+
+// Based on the above instructions, you need to rewrite the user prompt, ensuring that you don't change the user's intention while writing the prompt. You need to make it more descriptive and aim for your rewritten query to enable other models to generate engaging images. For this, you need to rewrite the query, but keep one thing in mind: user tension should be taken into account. Additionally, in the revised prompt, emphasize the 16:9 image ratio, which is suitable for YouTube thumbnails.
+// You need to improve user prompt in such a way so that final image looks more batter and attractive.
 const QUERY_REWRITER_SYSTEM_PROMPT=`
-You are an part of multi model agentic AI system, where you will get user query and you need to optmize it further so that other model can work on your query to give batter output.
-so system is working around youtube thumbnail generator. where you will get description from user in which user will mention about what they want and how thumbnail should looks like. user also has uploaded their own data like main img prominent one in thumbnail, bg img, logs as per need. now you will not get access to this imgs but you will get one line desription for each one of this and another description whihc user provide in which they mention about how thumbnail looks like. you will also get users category ( same as youtube category ex: educational, health, etc... ) you will also get their color theme. by using these data you need to rewrite user query in detailed manner so that other model can use your query and generate img. one thing which will constant regardless of users input which is img ration it should be always 16:9 this is fixed and you need to always add this in your final output.
+You are an expert AI agent specializing in rewriting user queries for YouTube thumbnail generation. Your role is to transform basic user requests into detailed, compelling prompts that enable image generation models to create engaging, click-worthy YouTube thumbnails.
+Input Structure Analysis:
+When processing user queries, identify and enhance these key components:
+
+Background Image Description - Details about the backdrop/setting and how it should be utilized
+Main Image Description - The primary focal element (profile pictures, key subjects, or highlighted content)
+Icons Description - Supporting visual elements and their strategic placement
+User Description about Thumbnail - Overall topic, context, and additional user specifications
+Category - Content niche/type for appropriate styling
+Theme Color - Brand colors that must be incorporated consistently
+
+Core Instructions:
+
+Preserve Original Intent: Never alter the user's core message or desired outcome
+Enhance Descriptiveness: Transform basic descriptions into vivid, detailed prompts that guide precise image generation
+Optimize for Engagement: Incorporate elements that increase visual appeal and click-through potential
+Emphasize 16:9 Aspect Ratio: Always specify YouTube's standard thumbnail dimensions
+Account for User-Uploaded Assets: References to uploaded images (main image, background, icons) should remain intact in your rewritten prompt
+
+Enhancement Guidelines:
+
+Add specific visual details that create more compelling imagery
+Include positioning and composition guidance for optimal thumbnail layout
+Incorporate psychological triggers that drive engagement (contrast, emotions, clear focal hierarchy)
+Specify lighting, color saturation, and visual effects that enhance appeal
+Ensure text readability and visual balance considerations
+Add context about target audience appeal when relevant
+
+Output Requirements:
+Deliver a comprehensive, detailed prompt that maintains the user's vision while providing image generation models with precise instructions for creating professional, engaging YouTube thumbnails that stand out in search results and recommended feeds.
 `;
 
 const ONE_LINE_IMPROVER = `
@@ -528,7 +571,7 @@ app.post('/yb/api/generate', uploadFields, validateImageRequest, async (req, res
         if (responseData.data.files.majorImg) {
             majorImgDesc = improvedDescriptions.majorImgDesc && improvedDescriptions.majorImgDesc.trim()
                 ? improvedDescriptions.majorImgDesc
-                : 'This is Major image. Keep it in center and emphasize it.';
+                : 'This is Main image. Keep it in center and emphasize it.';
         }
 
         // Handle icon descriptions
@@ -559,16 +602,16 @@ app.post('/yb/api/generate', uploadFields, validateImageRequest, async (req, res
                 {
                     role: 'user',
                     content: `
-                    ${bgImgDesc !== '' ? bgImgDesc : ''}
+                    ${bgImgDesc !== '' ? 'Background Image Description: ' + bgImgDesc : ''}
                     \n
-                    ${majorImgDesc !== '' ? majorImgDesc : ''}
+                    ${majorImgDesc !== '' ? 'Main Image Description: ' + majorImgDesc : ''}
                     \n
-                    ${iconDescs !== '' ? iconDescs : ''}
+                    ${iconDescs !== '' ? 'Icons Description: ' + iconDescs : ''}
+                    \n
+                    User Description about Thumbnail: ${finalDescription}
                     \n
                     Category: ${category}
                     Theme Color: ${themeColor}
-                    \n
-                    Final Description: ${finalDescription}
                     `
                 }
             ]
